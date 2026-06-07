@@ -85,7 +85,11 @@ def inject_custom_css():
 def fetch_infrastructure_state() -> Tuple[List[Dict], Dict]:
     try:
         connectors = [c for c in list_connectors() if "fivetran_log" not in c.get("service", "")]
-        tables = verify_tables_exist()
+        # Only show tables that belong to active connectors
+        active_schemas = [c["schema"].split(".")[0] for c in connectors]
+        all_tables = verify_tables_exist()
+        tables = {k: v for k, v in all_tables.items()
+                  if any(s in k for s in active_schemas)}
         return connectors, tables
     except Exception as e:
         logger.error(f"Sync error: {e}")
@@ -166,15 +170,22 @@ def main():
 
         st.markdown(f'<div class="glass-card"><div class="card-header">🗄️ Storage Layer</div>{t_items}</div>', unsafe_allow_html=True)
 
-        # Tracing Button
-        st.markdown(f"""
-        <a href="https://app.phoenix.arize.com/s/likhith0715/projects" target="_blank" style="text-decoration:none;">
-            <div class="glass-card" style="padding: 1rem; border-color: #1F6FEB40; cursor: pointer; text-align: center;">
-                <div style="font-size: 0.85rem; color: #58A6FF; font-weight: 500;">
-                    <span class="led led-blue" style="margin-right: 8px;"></span> Live Traces Active
+        # GitLab MR History
+        st.markdown("""
+        <div class="glass-card" style="padding: 1rem;">
+            <div class="card-header">📋 Fix History</div>
+            <div class="list-item">
+                <div>
+                    <div class="item-title">GitLab Merge Requests</div>
+                    <div class="item-subtitle">All AutoPatch automated fixes</div>
                 </div>
+                <a href="https://gitlab.com/google-rapid-hackathon/autopatch-dbt/-/merge_requests"
+                   target="_blank"
+                   style="font-family:monospace; font-size:0.7rem; color:#58A6FF; text-decoration:none;">
+                    View →
+                </a>
             </div>
-        </a>
+        </div>
         """, unsafe_allow_html=True)
 
     with right_col:
@@ -183,6 +194,26 @@ def main():
         if 'response' not in st.session_state: st.session_state.response = None
         if 'mr_url' not in st.session_state: st.session_state.mr_url = None
 
+        # Connector selection
+        st.markdown("""
+        <div style="font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+                    letter-spacing: 1px; color: #8B949E; margin-bottom: 0.75rem;">
+            Select Connectors to Monitor
+        </div>
+        """, unsafe_allow_html=True)
+
+        connector_options = [c["schema"] for c in connectors]
+
+        if "selected_connectors" not in st.session_state:
+            st.session_state.selected_connectors = connector_options
+
+        selected = []
+        for conn in connector_options:
+            if st.checkbox(conn, value=conn in st.session_state.selected_connectors, key=f"chk_{conn}"):
+                selected.append(conn)
+        st.session_state.selected_connectors = selected
+
+        st.markdown("<br>", unsafe_allow_html=True)
         run_btn = st.button("▶ INITIALIZE AGENT PROTOCOL")
 
         if run_btn:
@@ -210,8 +241,12 @@ def main():
             with st.spinner("Analyzing infrastructure..."):
                 try:
                     # Execute your actual backend agent here
+                    selected = st.session_state.get("selected_connectors", [])
+                    connector_str = ", ".join(selected) if selected else "all connectors"
                     response = asyncio.run(run_agent_async(
-                        "Check Fivetran pipelines for schema drift, calculate impact, and generate a GitLab MR."
+                        f"Check these Fivetran connectors for schema drift: {connector_str}. "
+                        "If anything is broken, calculate the business impact "
+                        "and create a GitLab MR to fix it automatically."
                     ))
                     
                     update_terminal("Schema mapping complete.", "success")
@@ -224,7 +259,16 @@ def main():
                     if urls: st.session_state.mr_url = urls[0]
                     
                 except Exception as e:
-                    update_terminal(f"CRITICAL FAILURE: {str(e)}", "warn")
+                    err = str(e)
+                    if "429" in err or "RESOURCE_EXHAUSTED" in err:
+                        update_terminal("⚠️ Gemini API rate limit reached. Please wait 60s and try again.", "warn")
+                        update_terminal("ℹ️ Free tier limit: 5 requests/min. Resets automatically.", "info")
+                    elif "401" in err or "UNAUTHENTICATED" in err:
+                        update_terminal("⚠️ API key authentication failed. Check your Gemini API key.", "warn")
+                    elif "404" in err:
+                        update_terminal("⚠️ Model not found. Check agent config.", "warn")
+                    else:
+                        update_terminal(f"⚠️ Agent error: {err[:100]}", "warn")
 
         # Keep terminal visible if logs exist
         elif st.session_state.logs:
@@ -236,14 +280,22 @@ def main():
 
         # Show incident report if exists
         if st.session_state.response:
-            st.markdown(f"""
-            <div class="incident-report">
-                <div style="color: #D29922; font-weight: 600; margin-bottom: 0.5rem; font-size: 0.9rem; text-transform: uppercase;">⚠️ Drift Resolution Report</div>
-                <div style="font-size: 0.95rem; line-height: 1.6; color: #E6EDF3;">
-                    {st.session_state.response}
-                </div>
+            import re
+            clean = re.sub(
+                r'###\s*\*?\*?Corrected dbt Model SQL Applied:\*?\*?.*',
+                '',
+                st.session_state.response,
+                flags=re.DOTALL
+            )
+            clean = re.sub(r'</?div[^>]*>', '', clean).strip()
+
+            st.markdown("""
+            <div style="color: #D29922; font-weight: 600; margin-bottom: 0.5rem;
+                        font-size: 0.9rem; text-transform: uppercase;">
+                ⚠️ Drift Resolution Report
             </div>
             """, unsafe_allow_html=True)
+            st.markdown(clean)
             
             if st.session_state.mr_url:
                 st.markdown(f"""

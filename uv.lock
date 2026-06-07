@@ -88,6 +88,25 @@ wheels = [
 ]
 
 [[package]]
+name = "arize-phoenix-otel"
+version = "0.16.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "openinference-instrumentation" },
+    { name = "openinference-semantic-conventions" },
+    { name = "opentelemetry-exporter-otlp" },
+    { name = "opentelemetry-proto" },
+    { name = "opentelemetry-sdk" },
+    { name = "opentelemetry-semantic-conventions" },
+    { name = "typing-extensions" },
+    { name = "wrapt" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/37/97/5aef2776ee17eacb24a82de719312008ca0a16b915415cc9363a9a9b1536/arize_phoenix_otel-0.16.1.tar.gz", hash = "sha256:28ba1d43dcd2dc556f6cac25622c3333e613e2cf1d687832a9ed5ce2c20e17be", size = 20933, upload-time = "2026-05-03T19:07:02.563Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ee/2e/e495446a8a715d9892a4dbc56e11b18fb6f07a634182babc0b0ac6827d9c/arize_phoenix_otel-0.16.1-py3-none-any.whl", hash = "sha256:eb71f7be8d94e68f5cd82b134f7ea1710fa73374bf0d8d663ce6242332871ff9", size = 18033, upload-time = "2026-05-03T19:07:01.395Z" },
+]
+
+[[package]]
 name = "attrs"
 version = "26.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -115,6 +134,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "arize-phoenix-client" },
+    { name = "arize-phoenix-otel" },
     { name = "fastapi" },
     { name = "google-adk" },
     { name = "google-cloud-aiplatform" },
@@ -132,6 +152,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "arize-phoenix-client", specifier = ">=2.7.0" },
+    { name = "arize-phoenix-otel", specifier = ">=0.16.1" },
     { name = "fastapi", specifier = ">=0.136.3" },
     { name = "google-adk", specifier = ">=2.2.0" },
     { name = "google-cloud-aiplatform", specifier = ">=1.156.0" },

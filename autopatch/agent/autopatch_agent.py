@@ -56,8 +56,12 @@ def detect_drift_tool() -> dict:
         if not model_path.endswith('.sql'):
             continue
         dbt_content = read_file(model_path)
+        # Strip SQL comments so English words aren't picked up
+        clean_content = re.sub(r'--.*', '', dbt_content)
+        clean_content = re.sub(r'/\*.*?\*/', '', clean_content, flags=re.DOTALL)
+        
         # Extract all identifiers as potential columns
-        cols = re.findall(r'\b[a-zA-Z_][a-zA-Z0-9_]*\b', dbt_content)
+        cols = re.findall(r'\b[a-zA-Z_][a-zA-Z0-9_]*\b', clean_content)
         cols = [c.lower() for c in cols if c.lower() not in sql_keywords and len(c) > 2]
         expected_columns_map[model_path] = cols
         all_expected_columns.extend(cols)
@@ -243,7 +247,7 @@ async def run_agent_async(user_message: str) -> str:
 
     agent = Agent(
         name="AutoPatch",
-        model="gemini-1.5-flash",
+        model="gemini-3.5-flash",
         description=(
             "AutoPatch is an autonomous AI agent for data pipeline reliability. "
             "It detects schema drift across ALL Fivetran connectors, calculates "

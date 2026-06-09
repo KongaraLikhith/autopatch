@@ -130,4 +130,4 @@ This project is licensed under the [MIT License](LICENSE).
 
 > [!WARNING]
 > **API Rate Limits Note**
-> AutoPatch uses the Google AI Developer API for Gemini models. If you are using a Free-Tier API Key, the agent's thought loop may occasionally hit the **5 requests-per-minute rate limit** (`429 Too Many Requests`). This is a limitation of the free API tier, not the code. If you experience this, wait 60 seconds and run the agent again, or set up a billing account in Google AI Studio to unlock the 1,000 RPM tier.
+> The live AutoPatch demo is currently deployed using a Free-Tier Google AI Developer API Key. Because the agent processes multiple tools in a rapid thought loop, you may occasionally hit the **5 requests-per-minute rate limit** (`429 Too Many Requests`) while testing the demo. This is a limitation of the free API tier, not the code. If you experience this, simply wait 60 seconds and click the button again!

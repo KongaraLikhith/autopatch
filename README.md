@@ -6,7 +6,7 @@
 
 Built for the [Google Cloud Rapid Agent Hackathon 2026](https://rapid-agent.devpost.com/).
 
-![AutoPatch UI](https://raw.githubusercontent.com/KongaraLikhith/autopatch/main/screenshot.png)
+![AutoPatch UI](submission%20files/img1.png)
 
 ---
 

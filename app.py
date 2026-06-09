@@ -280,7 +280,6 @@ def main():
 
         # Show incident report if exists
         if st.session_state.response:
-            import re
             clean = re.sub(
                 r'###\s*\*?\*?Corrected dbt Model SQL Applied:\*?\*?.*',
                 '',

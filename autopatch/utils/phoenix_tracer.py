@@ -10,14 +10,14 @@ def setup_phoenix_tracing(project_name: str = "autopatch") -> trace.Tracer:
 
     phoenix_api_key = get_secret("arize-phoenix-api-key")
 
-    # Set environment variables for OTLP export
-    os.environ["PHOENIX_CLIENT_HEADERS"] = f"api_key={phoenix_api_key}"
+    # Set environment variables exactly as Phoenix UI requests
+    os.environ["PHOENIX_API_KEY"] = phoenix_api_key
+    os.environ["PHOENIX_COLLECTOR_ENDPOINT"] = "https://app.phoenix.arize.com/s/likhith0715"
     os.environ["PHOENIX_PROJECT_NAME"] = project_name
 
     from phoenix.otel import register
     tracer_provider = register(
         project_name=project_name,
-        endpoint="https://app.phoenix.arize.com/v1/traces",
         batch=True,
     )
 

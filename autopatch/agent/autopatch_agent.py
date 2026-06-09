@@ -56,12 +56,9 @@ def detect_drift_tool() -> dict:
         if not model_path.endswith('.sql'):
             continue
         dbt_content = read_file(model_path)
-        # Extract column references from SQL
-        col_refs = re.findall(r'[a-zA-Z]\\.([a-zA-Z_][a-zA-Z0-9_]*)', dbt_content)
-        select_cols = re.findall(r'(?:SELECT|,)\s+([a-zA-Z_][a-zA-Z0-9_]*)', dbt_content)
-        cols = list(set(col_refs + select_cols))
-        
-        cols = [c for c in cols if c.lower() not in sql_keywords and len(c) > 2]
+        # Extract all identifiers as potential columns
+        cols = re.findall(r'\b[a-zA-Z_][a-zA-Z0-9_]*\b', dbt_content)
+        cols = [c.lower() for c in cols if c.lower() not in sql_keywords and len(c) > 2]
         expected_columns_map[model_path] = cols
         all_expected_columns.extend(cols)
 

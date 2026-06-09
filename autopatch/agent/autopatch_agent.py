@@ -15,6 +15,7 @@ from autopatch.tools.fivetran_tools import (
 )
 from autopatch.tools.gitlab_tools import (
     read_file,
+    list_files,
     create_fix_branch,
     commit_fix,
     create_merge_request,
@@ -27,39 +28,45 @@ from autopatch.tools.bigquery_tools import (
 from autopatch.utils.phoenix_tracer import setup_phoenix_tracing
 from autopatch.utils.secrets import get_secret
 
-# Only hardcoded value — the dbt model path in GitLab
-# Everything else is discovered dynamically
-DBT_MODEL_PATH = "models/revenue.sql"
+# DBT model paths are now discovered dynamically
 
 
 def detect_drift_tool() -> dict:
     """
     Tool 1: Scans ALL Fivetran connectors for schema drift.
-    Dynamically reads the dbt model to know what columns are expected.
+    Dynamically lists and reads all dbt models to know what columns are expected.
     No hardcoded column lists — works for any data source.
     """
     print("\n🔍 [Tool: detect_drift] Scanning ALL connectors for schema drift...")
 
-    # Read dbt model to extract expected column names dynamically
-    dbt_content = read_file(DBT_MODEL_PATH)
-
-    # Extract column references from SQL — patterns like o.column_name
-    col_refs = re.findall(r'[a-zA-Z]\\.([a-zA-Z_][a-zA-Z0-9_]*)', dbt_content)
-    # Also catch standalone column names in SELECT
-    select_cols = re.findall(r'(?:SELECT|,)\s+([a-zA-Z_][a-zA-Z0-9_]*)', dbt_content)
-    expected_columns = list(set(col_refs + select_cols))
-
-    # Filter out SQL keywords
+    # Discover all dbt models dynamically
+    models = list_files("models")
+    
+    expected_columns_map = {}
+    all_expected_columns = []
+    
     sql_keywords = {"this", "ref", "source", "config", "model", 
         "select", "from", "join", "where", "on", "as", "and", "or",
         "not", "in", "is", "null", "order", "by", "group", "having",
         "limit", "distinct", "case", "when", "then", "else", "end",
         "inner", "left", "right", "outer", "cross", "using", "with"
     }
-    expected_columns = [c for c in expected_columns
-                        if c.lower() not in sql_keywords and len(c) > 2]
 
-    print(f"   Columns expected by dbt model: {expected_columns}")
+    for model_path in models:
+        if not model_path.endswith('.sql'):
+            continue
+        dbt_content = read_file(model_path)
+        # Extract column references from SQL
+        col_refs = re.findall(r'[a-zA-Z]\\.([a-zA-Z_][a-zA-Z0-9_]*)', dbt_content)
+        select_cols = re.findall(r'(?:SELECT|,)\s+([a-zA-Z_][a-zA-Z0-9_]*)', dbt_content)
+        cols = list(set(col_refs + select_cols))
+        
+        cols = [c for c in cols if c.lower() not in sql_keywords and len(c) > 2]
+        expected_columns_map[model_path] = cols
+        all_expected_columns.extend(cols)
+
+    all_expected_columns = list(set(all_expected_columns))
+    print(f"   Columns expected by dbt models: {all_expected_columns}")
 
     # Check ALL connectors dynamically
     connectors = list_connectors()
@@ -68,26 +75,28 @@ def detect_drift_tool() -> dict:
     for connector in connectors:
         if "fivetran_log" in connector["service"]:
             continue
-
-        drift = detect_schema_changes(connector["id"], expected_columns)
+        drift = detect_schema_changes(connector["id"], all_expected_columns)
         drift["connector_name"] = connector["schema"]
         drift["service"] = connector["service"]
         drift_results.append(drift)
 
     any_drift = any(d["drift_detected"] for d in drift_results)
 
-    # Extract renamed column pairs
     renames = []
+    broken_models = set()
     for d in drift_results:
         for r in d.get("potentially_renamed", []):
             renames.append(r)
+            for model_path, cols in expected_columns_map.items():
+                if r['from'] in cols:
+                    broken_models.add(model_path)
 
     result = {
         "drift_detected": any_drift,
         "connectors_checked": len(drift_results),
         "drift_details": drift_results,
         "column_renames": renames,
-        "expected_columns": expected_columns,
+        "broken_models": list(broken_models),
         "timestamp": datetime.utcnow().isoformat(),
     }
 
@@ -96,6 +105,8 @@ def detect_drift_tool() -> dict:
     if renames:
         for r in renames:
             print(f"   Renamed: {r['from']} → {r['to']}")
+    if broken_models:
+        print(f"   Broken models: {broken_models}")
 
     return result
 
@@ -134,20 +145,21 @@ def calculate_impact_tool(broken_column: str) -> dict:
     }
 
 
-def read_dbt_model_tool() -> dict:
+def read_dbt_model_tool(file_path: str) -> dict:
     """
-    Tool 3: Reads the current dbt model from GitLab.
+    Tool 3: Reads a specific dbt model from GitLab.
     Returns the SQL content so the agent can see what needs fixing.
     """
-    print(f"\n📄 [Tool: read_dbt_model] Reading {DBT_MODEL_PATH} from GitLab...")
-    content = read_file(DBT_MODEL_PATH)
+    print(f"\n📄 [Tool: read_dbt_model] Reading {file_path} from GitLab...")
+    content = read_file(file_path)
     return {
-        "file_path": DBT_MODEL_PATH,
+        "file_path": file_path,
         "content": content,
     }
 
 
 def create_fix_mr_tool(
+    file_path: str,
     old_column: str,
     new_column: str,
     fixed_sql: str
@@ -157,11 +169,12 @@ def create_fix_mr_tool(
     The agent calls this after generating the fix.
 
     Args:
+        file_path: path to the model e.g. "models/revenue.sql"
         old_column: column name that broke e.g. "order_amount"
         new_column: what it was renamed to e.g. "quantity"
         fixed_sql: the corrected SQL with new column name
     """
-    print(f"\n🛠️  [Tool: create_fix_mr] Creating fix MR...")
+    print(f"\n🛠️  [Tool: create_fix_mr] Creating fix MR for {file_path}...")
 
     timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
     branch_name = f"fix/schema-drift-{old_column}-{timestamp}"
@@ -172,9 +185,9 @@ def create_fix_mr_tool(
         f"fix: update {old_column} to {new_column} in dbt model\n\n"
         f"AutoPatch detected schema drift at {timestamp}.\n"
         f"Column '{old_column}' was renamed to '{new_column}' in source.\n"
-        f"Updated {DBT_MODEL_PATH} to use new column name."
+        f"Updated {file_path} to use new column name."
     )
-    commit_fix(branch_name, DBT_MODEL_PATH, fixed_sql, commit_message)
+    commit_fix(branch_name, file_path, fixed_sql, commit_message)
 
     mr_description = (
         f"## 🤖 AutoPatch — Automated Schema Drift Fix\n\n"
@@ -182,10 +195,10 @@ def create_fix_mr_tool(
         f"Column `{old_column}` was renamed to `{new_column}` "
         f"in the upstream Fivetran source.\n\n"
         f"### What broke\n"
-        f"`{DBT_MODEL_PATH}` referenced `{old_column}` "
+        f"`{file_path}` referenced `{old_column}` "
         f"which no longer exists, breaking downstream dashboards.\n\n"
         f"### What this MR fixes\n"
-        f"Updated `{DBT_MODEL_PATH}` to use `{new_column}` "
+        f"Updated `{file_path}` to use `{new_column}` "
         f"instead of `{old_column}`.\n\n"
         f"### Detected by\n"
         f"AutoPatch AI Agent — {timestamp}\n"
@@ -233,7 +246,7 @@ async def run_agent_async(user_message: str) -> str:
 
     agent = Agent(
         name="AutoPatch",
-        model="gemini-3.5-flash",
+        model="gemini-1.5-flash",
         description=(
             "AutoPatch is an autonomous AI agent for data pipeline reliability. "
             "It detects schema drift across ALL Fivetran connectors, calculates "
@@ -245,22 +258,22 @@ You are AutoPatch, an autonomous AI agent for data pipeline reliability.
 You work across ANY data source — not just specific tables or columns.
 
 STEP 1 — DETECT
-Call detect_drift_tool. It dynamically reads the dbt model to find
+Call detect_drift_tool. It dynamically reads all dbt models to find
 expected columns, then checks ALL Fivetran connectors for drift.
-The result includes column_renames with exact from/to pairs.
+The result includes column_renames and a list of broken_models.
 
 STEP 2 — ASSESS IMPACT
 If drift detected, call calculate_impact_tool with the broken column name.
 It will automatically find the affected BigQuery table.
 
 STEP 3 — READ THE BROKEN MODEL
-Call read_dbt_model_tool to see the current SQL.
+For each model in broken_models, call read_dbt_model_tool(file_path) to see the current SQL.
 
 STEP 4 — FIX IT
 Use column_renames[0]["from"] and column_renames[0]["to"] from Step 1
 as old_column and new_column. Generate fixed SQL by replacing all
 occurrences of old_column with new_column.
-Call create_fix_mr_tool with old_column, new_column, fixed_sql.
+Call create_fix_mr_tool with file_path, old_column, new_column, fixed_sql.
 
 STEP 5 — INCIDENT REPORT
 End with a structured incident report:

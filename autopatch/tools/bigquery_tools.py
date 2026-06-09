@@ -1,6 +1,12 @@
 from google.cloud import bigquery
 
-client = bigquery.Client(project="autopatch-498421")
+_client = None
+
+def get_client():
+    global _client
+    if _client is None:
+        _client = bigquery.Client(project="autopatch-498421")
+    return _client
 
 
 def get_all_datasets() -> list:
@@ -8,7 +14,7 @@ def get_all_datasets() -> list:
     Returns all datasets in the project.
     Used to discover what Fivetran has synced dynamically.
     """
-    datasets = list(client.list_datasets())
+    datasets = list(get_client().list_datasets())
     return [d.dataset_id for d in datasets
             if not d.dataset_id.startswith("_")
             and "fivetran_metadata" not in d.dataset_id]
@@ -19,8 +25,8 @@ def get_all_tables(dataset_id: str) -> list:
     Returns all tables in a dataset with their column schemas.
     """
     tables = []
-    for table_ref in client.list_tables(dataset_id):
-        table = client.get_table(table_ref)
+    for table_ref in get_client().list_tables(dataset_id):
+        table = get_client().get_table(table_ref)
         columns = [
             {"name": f.name, "type": f.field_type}
             for f in table.schema
@@ -40,7 +46,7 @@ def get_table_schema(table_ref: str) -> list:
     """
     Fetches schema for a specific table.
     """
-    table = client.get_table(table_ref)
+    table = get_client().get_table(table_ref)
     return [
         {"name": f.name, "type": f.field_type}
         for f in table.schema
@@ -52,7 +58,7 @@ def run_query(sql: str) -> list:
     """
     Runs a BigQuery SQL query and returns results.
     """
-    query_job = client.query(sql)
+    query_job = get_client().query(sql)
     return [dict(row) for row in query_job.result()]
 
 

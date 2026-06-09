@@ -18,4 +18,4 @@ COPY . .
 EXPOSE 8501
 
 # Run the app
-CMD ["uv", "run", "python", "app.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
+CMD ["sh", "-c", "uv run streamlit run app.py --server.port ${PORT:-8080} --server.address 0.0.0.0"]

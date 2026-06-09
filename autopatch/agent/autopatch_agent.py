@@ -38,6 +38,7 @@ def detect_drift_tool() -> dict:
     No hardcoded column lists — works for any data source.
     """
     print("\n🔍 [Tool: detect_drift] Scanning ALL connectors for schema drift...")
+    time.sleep(3)
 
     # Discover all dbt models dynamically
     models = list_files("models")
@@ -119,6 +120,7 @@ def calculate_impact_tool(broken_column: str) -> dict:
     Works for any table — not hardcoded.
     """
     print(f"\n💰 [Tool: calculate_impact] Assessing impact of: {broken_column}")
+    time.sleep(3)
 
     # Dynamically find which BigQuery table actually has this column
     try:
@@ -152,6 +154,7 @@ def read_dbt_model_tool(file_path: str) -> dict:
     Returns the SQL content so the agent can see what needs fixing.
     """
     print(f"\n📄 [Tool: read_dbt_model] Reading {file_path} from GitLab...")
+    time.sleep(3)
     content = read_file(file_path)
     return {
         "file_path": file_path,
@@ -176,6 +179,7 @@ def create_fix_mr_tool(
         fixed_sql: the corrected SQL with new column name
     """
     print(f"\n🛠️  [Tool: create_fix_mr] Creating fix MR for {file_path}...")
+    time.sleep(4)
 
     timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
     branch_name = f"fix/schema-drift-{old_column}-{timestamp}"
@@ -221,6 +225,7 @@ def get_bigquery_schema_tool() -> dict:
     No hardcoded table names — works for any Fivetran destination.
     """
     print("\n📊 [Tool: get_bq_schema] Discovering all BigQuery tables...")
+    time.sleep(2)
 
     try:
         datasets = get_all_datasets()
